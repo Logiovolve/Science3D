@@ -8,88 +8,62 @@
   <!-- Three.js -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
-  <!-- Google MediaPipe AI Vision Task -->
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/vision_bundle.js" crossorigin="anonymous"></script>
-  <style>
-    body { touch-action: manipulation; overscroll-behavior: none; -webkit-user-select: none; user-select: none; }
-    .canvas-container canvas { touch-action: none; }
-  </style>
+  <!-- Google MediaPipe AI -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/vision_bundle.js" crossorigin="anonymous"></script>
 </head>
 <body class="bg-slate-900 text-white min-h-screen flex flex-col p-3">
 
   <header class="p-2 border-b border-slate-700 flex justify-between items-center mb-2">
-    <h1 class="text-sm md:text-base font-bold text-indigo-400">AI全自動セグメンテーション 3D立体観察ノート</h1>
-    <span id="aiStatusBadge" class="text-xs bg-amber-900 text-amber-200 px-2.5 py-0.5 rounded-full font-bold">AIモデル準備中...</span>
+    <h1 class="text-sm md:text-base font-bold text-indigo-400">AI完全自動セグメンテーション 3D観察</h1>
+    <span id="aiStatusBadge" class="text-xs bg-amber-900 text-amber-200 px-2.5 py-0.5 rounded-full font-bold">AIエンジンロード中...</span>
   </header>
 
   <main class="flex-1 max-w-6xl w-full mx-auto grid grid-cols-1 md:grid-cols-3 gap-3">
-
-    <!-- 左側：撮影＆写真管理パネル -->
+    <!-- 左側：コントロール -->
     <div class="bg-slate-800 p-3 rounded-2xl border border-slate-700 flex flex-col space-y-3">
-      
       <div class="bg-slate-900 p-3 rounded-xl border border-slate-700">
-        <div class="text-xs text-indigo-300 font-bold mb-1">ガイド:</div>
         <div id="guideInstruction" class="text-sm font-extrabold text-amber-300">
-          ① 【正面】から対象物（生き物・植物・無機物）を撮影してください
+          ① 【正面】から対象物を撮影してください
         </div>
-        <div class="text-[10px] text-slate-400 mt-1">※撮影するとAIが自動で物体を検出し、背景をクリアに消去します。</div>
       </div>
 
       <div>
         <input type="file" id="cameraInput" accept="image/*" capture="environment" class="hidden" onchange="handlePhotoCapture(event)" disabled>
-        <label id="captureBtnLabel" for="cameraInput" class="w-full bg-slate-700 text-slate-400 font-bold py-3 px-4 rounded-xl text-xs flex items-center justify-center space-x-2 cursor-not-allowed shadow transition">
-          <span>📷 AIの準備完了を待っています...</span>
+        <label id="captureBtnLabel" for="cameraInput" class="w-full bg-slate-700 text-slate-400 font-bold py-3 px-4 rounded-xl text-xs flex items-center justify-center space-x-2 shadow transition cursor-not-allowed">
+          <span id="btnText">📷 AIの起動をお待ちください</span>
         </label>
       </div>
 
       <!-- 写真リスト -->
       <div class="flex-1 flex flex-col">
-        <div class="text-xs font-bold text-slate-300 mb-1 flex justify-between items-center">
-          <span>AI解析済みリスト</span>
-          <span id="angleCount" class="text-indigo-400 font-mono">0 枚</span>
-        </div>
         <div id="photoListGrid" class="grid grid-cols-2 gap-2 p-2 bg-slate-950 rounded-xl border border-slate-800 min-h-[140px] max-h-[220px] overflow-y-auto">
-          <span class="col-span-2 text-[11px] text-slate-500 text-center self-center">撮影した写真が自動で背景除去されて追加されます。</span>
+          <span class="col-span-2 text-[11px] text-slate-500 text-center self-center">撮影するとAIが背景を自動消去します</span>
         </div>
       </div>
 
-      <button id="generateARBtn" onclick="build3DARScene()" disabled class="w-full bg-emerald-600 active:bg-emerald-700 disabled:bg-slate-700 disabled:text-slate-500 text-white font-bold py-3 rounded-xl text-xs transition shadow flex items-center justify-center space-x-1">
+      <button id="generateARBtn" onclick="build3DARScene()" disabled class="w-full bg-emerald-600 disabled:bg-slate-700 disabled:text-slate-500 text-white font-bold py-3 rounded-xl text-xs transition shadow flex items-center justify-center space-x-1">
         <span>✨ 3D立体表示（回転観察）</span>
       </button>
-
-      <!-- AI解析ログ表示 -->
-      <div id="aiLogArea" class="hidden text-[10px] bg-slate-950 p-2 rounded border border-slate-800 text-indigo-300 font-mono">
-        AI解析中: 被写体セグメンテーション実行中...
-      </div>
     </div>
 
     <!-- 右側：3D表示ビューア -->
     <div class="md:col-span-2 bg-slate-950 rounded-2xl border border-slate-800 relative overflow-hidden flex flex-col min-h-[380px]">
-      <div id="webglContainer" class="canvas-container w-full h-full flex-1"></div>
-      
-      <div class="absolute bottom-3 left-3 bg-slate-900/90 backdrop-blur-md px-3 py-1.5 rounded-lg text-[11px] text-slate-300 border border-slate-700 pointer-events-none">
-        👉 画面を指で回すと、撮影した角度の背景透過画像へスムーズに切り替わります
-      </div>
+      <div id="webglContainer" class="w-full h-full flex-1"></div>
     </div>
-
   </main>
 
   <script>
     let scene, camera, renderer, controls;
     let spriteMeshMap = {}; 
     let activeSprite = null;
-
-    // Google MediaPipe AI Segmenter
-    let imageSegmenter;
-    const { ImageSegmenter, FilesetResolver } = vision;
+    let imageSegmenter = null;
 
     const captureSteps = [
       { name: "① 【正面】から撮影してください", tag: "正面" },
       { name: "② 【右側】から撮影してください", tag: "右" },
       { name: "③ 【左側】から撮影してください", tag: "左" },
-      { name: "④ 【真上・斜め上】から撮影してください", tag: "上・下" }
+      { name: "④ 【真上】から撮影してください", tag: "上" }
     ];
-
     let capturedPhotos = []; 
     let photoIdCounter = 0;
 
@@ -98,252 +72,160 @@
       initMediaPipeAI();
     });
 
-    // 1. Google MediaPipe AIの初期化
+    // AI初期化処理
     async function initMediaPipeAI() {
       try {
+        const { ImageSegmenter, FilesetResolver } = vision;
         const filesetResolver = await FilesetResolver.forVisionTasks(
-          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
+          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm"
         );
 
         imageSegmenter = await ImageSegmenter.createFromOptions(filesetResolver, {
           baseOptions: {
-            modelAssetPath: "https://storage.googleapis.com/mediapipe-models/image_segmenter/deeplab_v3/float32/1/deeplab_v3.tflite",
+            // ブロックされにくいGitHubのプロキシURLを利用
+            modelAssetPath: "https://raw.githubusercontent.com/google/mediapipe/master/mediapipe/tasks/testdata/vision/deeplabv3.tflite",
             delegate: "GPU"
           },
           outputCategoryMask: true,
           outputConfidenceMasks: false
         });
 
-        // AI準備完了
+        // AI準備完了UI更新
         const badge = document.getElementById('aiStatusBadge');
-        badge.innerText = "AIエンジン動作中 (GPU)";
+        badge.innerText = "AIエンジン稼働中";
         badge.className = "text-xs bg-emerald-900 text-emerald-200 px-2.5 py-0.5 rounded-full font-bold";
 
         const btnLabel = document.getElementById('captureBtnLabel');
         btnLabel.className = "w-full bg-indigo-600 active:bg-indigo-700 text-white font-bold py-3 px-4 rounded-xl text-xs flex items-center justify-center space-x-2 cursor-pointer shadow transition";
-        btnLabel.innerHTML = "<span>📷 写真を撮影する（AI自動背景消去）</span>";
-
+        document.getElementById('btnText').innerText = "📷 写真を撮影する（AI自動切抜）";
         document.getElementById('cameraInput').disabled = false;
+
       } catch (e) {
         console.error("AIロードエラー:", e);
-        document.getElementById('aiStatusBadge').innerText = "AIエラー (代替モード動作)";
+        document.getElementById('aiStatusBadge').innerText = "AI通信エラー";
+        document.getElementById('btnText').innerText = "通信環境を確認してください";
+        alert("AIモデルのダウンロードに失敗しました。学校のネットワークでブロックされている可能性があります。");
       }
     }
 
-    // 2. Three.js初期化
+    // Three.js初期化
     function initThreeJS() {
       const container = document.getElementById('webglContainer');
-      const width = container.clientWidth || window.innerWidth;
-      const height = container.clientHeight || 380;
-
       scene = new THREE.Scene();
-      scene.background = new THREE.Color(0x020617);
-
-      camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
+      camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 1000);
       camera.position.set(0, 0, 20);
 
       renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-      renderer.setSize(width, height);
+      renderer.setPixelRatio(window.devicePixelRatio);
+      renderer.setSize(container.clientWidth, container.clientHeight);
       container.appendChild(renderer.domElement);
 
       controls = new THREE.OrbitControls(camera, renderer.domElement);
       controls.enableDamping = true;
-      controls.dampingFactor = 0.05;
-
-      const ambientLight = new THREE.AmbientLight(0xffffff, 1.2);
-      scene.add(ambientLight);
 
       const grid = new THREE.GridHelper(30, 12, 0x1e293b, 0x0f172a);
       grid.position.y = -5;
       scene.add(grid);
 
-      window.addEventListener('resize', onWindowResize, false);
       animate();
     }
 
     function animate() {
       requestAnimationFrame(animate);
       if (controls) controls.update();
-      if (activeSprite && camera) {
-        const theta = Math.atan2(camera.position.x, camera.position.z);
-        updateActiveAngleView(theta);
-      }
-      if (renderer && scene && camera) renderer.render(scene, camera);
+      if (activeSprite && camera) updateActiveAngleView(Math.atan2(camera.position.x, camera.position.z));
+      renderer.render(scene, camera);
     }
 
-    function onWindowResize() {
-      const container = document.getElementById('webglContainer');
-      if (!container || !renderer || !camera) return;
-      camera.aspect = container.clientWidth / container.clientHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(container.clientWidth, container.clientHeight);
-    }
-
-    // 3. 写真キャプチャ＆AI自動セグメンテーション
+    // 写真撮影＆AI処理
     function handlePhotoCapture(event) {
       const file = event.target.files[0];
       if (!file) return;
 
-      const logArea = document.getElementById('aiLogArea');
-      logArea.classList.remove('hidden');
-      logArea.innerText = "AIが撮影画像を解析中...（対象物を自動検出中）";
-
+      document.getElementById('aiStatusBadge').innerText = "AI解析中...";
+      
       const reader = new FileReader();
       reader.onload = (e) => {
         const img = new Image();
-        img.onload = () => {
-          runAISegmentation(img);
-        };
+        img.onload = () => runAISegmentation(img);
         img.src = e.target.result;
       };
       reader.readAsDataURL(file);
       event.target.value = '';
     }
 
-    // 4. AIによる自動背景削除メイン処理
+    // AIによる全自動切り抜き
     function runAISegmentation(imgElement) {
-      if (!imageSegmenter) {
-        fallbackProcess(imgElement);
-        return;
-      }
-
       imageSegmenter.segment(imgElement, (result) => {
         const mask = result.categoryMask;
-        const width = mask.width;
-        const height = mask.height;
-
         const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
+        canvas.width = mask.width;
+        canvas.height = mask.height;
         const ctx = canvas.getContext('2d');
+        ctx.drawImage(imgElement, 0, 0);
 
-        // 元画像を一度描画
-        ctx.drawImage(imgElement, 0, 0, width, height);
-
-        const imgData = ctx.getImageData(0, 0, width, height);
+        const imgData = ctx.getImageData(0, 0, mask.width, mask.height);
         const pixels = imgData.data;
         const maskData = mask.getAsUint8Array();
 
-        // AIのセグメンテーションマスクを元に背景（カテゴリ0）のピクセルを全自動透明化
+        // 0は背景、それ以外(1～)が物体。背景を透明化
         for (let i = 0; i < maskData.length; i++) {
-          const category = maskData[i];
-          if (category === 0) { // 背景領域
-            pixels[i * 4 + 3] = 0; // α（透明度）を0にする
-          }
+          if (maskData[i] === 0) pixels[i * 4 + 3] = 0;
         }
-
         ctx.putImageData(imgData, 0, 0);
 
-        photoIdCounter++;
         const step = captureSteps[Math.min(capturedPhotos.length, captureSteps.length - 1)];
-
         capturedPhotos.push({
-          id: photoIdCounter,
+          id: ++photoIdCounter,
           tag: step.tag,
           processedSrc: canvas.toDataURL('image/png')
         });
 
-        document.getElementById('aiLogArea').classList.add('hidden');
+        document.getElementById('aiStatusBadge').innerText = "AIエンジン稼働中";
         updatePhotoListUI();
-        updateGuideText();
       });
-    }
-
-    // AIが非対応環境の場合フォールバック
-    function fallbackProcess(imgElement) {
-      photoIdCounter++;
-      const step = captureSteps[Math.min(capturedPhotos.length, captureSteps.length - 1)];
-
-      capturedPhotos.push({
-        id: photoIdCounter,
-        tag: step.tag,
-        processedSrc: imgElement.src
-      });
-
-      document.getElementById('aiLogArea').classList.add('hidden');
-      updatePhotoListUI();
-      updateGuideText();
-    }
-
-    function deletePhoto(id) {
-      capturedPhotos = capturedPhotos.filter(p => p.id !== id);
-      updatePhotoListUI();
-      updateGuideText();
     }
 
     function updatePhotoListUI() {
       const grid = document.getElementById('photoListGrid');
-      const btn = document.getElementById('generateARBtn');
-      document.getElementById('angleCount').innerText = `${capturedPhotos.length} 枚`;
-
-      if (capturedPhotos.length === 0) {
-        grid.innerHTML = '<span class="col-span-2 text-[11px] text-slate-500 text-center self-center">撮影した写真が自動で背景除去されて追加されます。</span>';
-        btn.disabled = true;
-        return;
-      }
-
       grid.innerHTML = '';
-      capturedPhotos.forEach((photo, index) => {
-        const card = document.createElement('div');
-        card.className = 'relative bg-slate-900 border border-slate-700 rounded-lg p-1.5 flex items-center space-x-2';
-        card.innerHTML = `
-          <img src="${photo.processedSrc}" class="w-10 h-10 object-contain rounded bg-slate-950 border border-slate-800 flex-shrink-0" />
-          <div class="flex-1 min-w-0">
-            <div class="text-[10px] font-bold text-indigo-300 truncate">${index + 1}. ${photo.tag}</div>
-            <button onclick="deletePhoto(${photo.id})" class="text-[10px] bg-red-900/60 hover:bg-red-800 text-red-200 px-1.5 py-0.5 rounded mt-0.5">
-              削除
-            </button>
-          </div>
-        `;
-        grid.appendChild(card);
+      capturedPhotos.forEach((photo, idx) => {
+        const div = document.createElement('div');
+        div.className = 'bg-slate-900 border border-slate-700 rounded-lg p-1.5 flex items-center space-x-2';
+        div.innerHTML = `<img src="${photo.processedSrc}" class="w-10 h-10 object-contain rounded bg-slate-950"/>
+                         <div class="text-[10px] text-indigo-300">${idx + 1}. ${photo.tag}</div>`;
+        grid.appendChild(div);
       });
-
-      btn.disabled = capturedPhotos.length < 1;
+      document.getElementById('generateARBtn').disabled = capturedPhotos.length === 0;
+      
+      const guide = document.getElementById('guideInstruction');
+      guide.innerText = capturedPhotos.length < captureSteps.length ? captureSteps[capturedPhotos.length].name : "撮影完了！「3D立体表示」を押してください。";
     }
 
-    function updateGuideText() {
-      const guideEl = document.getElementById('guideInstruction');
-      if (capturedPhotos.length < captureSteps.length) {
-        guideEl.innerText = captureSteps[capturedPhotos.length].name;
-      } else {
-        guideEl.innerText = "必要枚数が揃いました！「3D立体表示」を押してください。";
-      }
-    }
-
-    // 多方向ビルボード形式での立体表示構築
     function build3DARScene() {
-      if (activeSprite) scene.remove(activeSprite);
-
-      const textureLoader = new THREE.TextureLoader();
+      scene.children = scene.children.filter(c => c.type !== 'Sprite');
       spriteMeshMap = {};
-
+      
+      const loader = new THREE.TextureLoader();
       capturedPhotos.forEach(photo => {
-        const texture = textureLoader.load(photo.processedSrc);
-        const material = new THREE.SpriteMaterial({ map: texture, transparent: true });
-        const sprite = new THREE.Sprite(material);
+        const mat = new THREE.SpriteMaterial({ map: loader.load(photo.processedSrc), transparent: true });
+        const sprite = new THREE.Sprite(mat);
         sprite.scale.set(8, 8, 1);
-
         spriteMeshMap[photo.tag] = sprite;
       });
 
       if (capturedPhotos.length > 0) {
-        activeSprite = spriteMeshMap[capturedPhotos[0].tag] || Object.values(spriteMeshMap)[0];
+        activeSprite = spriteMeshMap[capturedPhotos[0].tag];
         scene.add(activeSprite);
       }
     }
 
     function updateActiveAngleView(theta) {
       if (!spriteMeshMap || Object.keys(spriteMeshMap).length === 0) return;
-
       let selectedTag = '正面';
-      if (theta > Math.PI / 4 && theta < (3 * Math.PI) / 4 && spriteMeshMap['右']) {
-        selectedTag = '右';
-      } else if (theta < -Math.PI / 4 && theta > (-3 * Math.PI) / 4 && spriteMeshMap['左']) {
-        selectedTag = '左';
-      } else if ((theta >= (3 * Math.PI) / 4 || theta <= (-3 * Math.PI) / 4) && spriteMeshMap['上・下']) {
-        selectedTag = '上・下';
-      }
+      if (theta > 0.78 && theta < 2.35 && spriteMeshMap['右']) selectedTag = '右';
+      else if (theta < -0.78 && theta > -2.35 && spriteMeshMap['左']) selectedTag = '左';
+      else if ((theta >= 2.35 || theta <= -2.35) && spriteMeshMap['上']) selectedTag = '上';
 
       if (spriteMeshMap[selectedTag] && activeSprite !== spriteMeshMap[selectedTag]) {
         scene.remove(activeSprite);
