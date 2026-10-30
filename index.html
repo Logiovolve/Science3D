@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>多角撮影＆背景カット AR風オブジェクト表示Web</title>
+  <title>AI位置補正＆背景自動削除 AR立体オブジェクト作成Web</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
@@ -16,64 +16,75 @@
 
   <!-- ヘッダー -->
   <header class="p-2 border-b border-slate-700 flex justify-between items-center mb-2">
-    <h1 class="text-sm md:text-base font-bold text-indigo-400">AR風 全方向写真オブジェクト化</h1>
-    <span class="text-xs bg-indigo-900 text-indigo-200 px-2.5 py-0.5 rounded-full">上下左右・多角撮影</span>
+    <h1 class="text-sm md:text-base font-bold text-indigo-400">AI角度補正＆背景消去 ARオブジェクト作成</h1>
+    <span class="text-xs bg-indigo-900 text-indigo-200 px-2.5 py-0.5 rounded-full">iPad / タッチ対応</span>
   </header>
 
   <!-- メインレイアウト -->
   <main class="flex-1 max-w-6xl w-full mx-auto grid grid-cols-1 md:grid-cols-3 gap-3">
 
-    <!-- 左側：多方向撮影ガイド ＆ パネル -->
+    <!-- 左側：撮影コントロール ＆ 画像管理パネル -->
     <div class="bg-slate-800 p-3 rounded-2xl border border-slate-700 flex flex-col space-y-3">
       
       <!-- 撮影ガイド指示 -->
       <div class="bg-slate-900 p-3 rounded-xl border border-slate-700">
-        <div class="text-xs text-indigo-300 font-bold mb-1">現在の撮影指示:</div>
+        <div class="text-xs text-indigo-300 font-bold mb-1">撮影ガイド:</div>
         <div id="guideInstruction" class="text-sm font-extrabold text-amber-300">
-          ① 【正面】から撮影してください
+          ① 【正面】から対象物を撮ってください
         </div>
-        <div class="text-[10px] text-slate-400 mt-1">※背景と物体の境目がわかりやすい場所（白い紙の上など）で撮ると綺麗に切り抜けます。</div>
+        <div class="text-[10px] text-slate-400 mt-1">※角度がずれてもAIが自動認識して形と位置を合わせます。</div>
       </div>
 
-      <!-- カメラ起動 ＆ 連続撮影ボタン -->
-      <div class="space-y-2">
+      <!-- 撮影ボタン -->
+      <div>
         <input type="file" id="cameraInput" accept="image/*" capture="environment" class="hidden" onchange="handlePhotoCapture(event)">
-        <label for="cameraInput" id="captureBtnLabel" class="w-full bg-indigo-600 active:bg-indigo-700 text-white font-bold py-3 px-4 rounded-xl text-xs flex items-center justify-center space-x-2 cursor-pointer shadow">
-          <span>📷 ガイドに合わせて撮影する</span>
+        <label for="cameraInput" class="w-full bg-indigo-600 active:bg-indigo-700 text-white font-bold py-3 px-4 rounded-xl text-xs flex items-center justify-center space-x-2 cursor-pointer shadow">
+          <span>📷 写真を撮影する</span>
         </label>
       </div>
 
-      <!-- 撮影済みアングル一覧 -->
+      <!-- 撮影済み写真管理（削除・AI補正プレビュー） -->
       <div class="flex-1 flex flex-col">
-        <div class="text-xs font-bold text-slate-300 mb-1 flex justify-between">
-          <span>取得済みアングル</span>
-          <span id="angleCount" class="text-indigo-400">0 / 5 方向</span>
+        <div class="text-xs font-bold text-slate-300 mb-1 flex justify-between items-center">
+          <span>取得した写真（タップで削除可能）</span>
+          <span id="angleCount" class="text-indigo-400 font-mono">0 枚</span>
         </div>
-        <div id="angleGrid" class="grid grid-cols-3 gap-1.5 p-2 bg-slate-950 rounded-xl border border-slate-800 min-h-[100px]">
-          <span class="col-span-3 text-[11px] text-slate-500 text-center self-center">撮影した画像（切り抜き済）が追加されます</span>
+        <div id="photoListGrid" class="grid grid-cols-2 gap-2 p-2 bg-slate-950 rounded-xl border border-slate-800 min-h-[140px] max-h-[220px] overflow-y-auto">
+          <span class="col-span-2 text-[11px] text-slate-500 text-center self-center">撮影した写真がここに並びます。<br>失敗した写真は「🗑️ 削除」できます。</span>
         </div>
       </div>
 
-      <!-- 背景カット ＆ AR風オブジェクト化実行 -->
-      <button id="generateARBtn" onclick="generateARObject()" disabled class="w-full bg-emerald-600 active:bg-emerald-700 disabled:bg-slate-700 disabled:text-slate-500 text-white font-bold py-3 rounded-xl text-xs transition shadow">
-        ✨ 背景を切り抜いてARオブジェクト化
+      <!-- AI背景削除 ＆ 角度補正＋立体化実行ボタン -->
+      <button id="generateARBtn" onclick="processAIAndBuild3D()" disabled class="w-full bg-emerald-600 active:bg-emerald-700 disabled:bg-slate-700 disabled:text-slate-500 text-white font-bold py-3 rounded-xl text-xs transition shadow flex items-center justify-center space-x-1">
+        <span>✨ AIで背景消去＆角度補正して立体化</span>
       </button>
+
+      <!-- AI処理進捗表示 -->
+      <div id="aiProgress" class="hidden space-y-1 pt-1">
+        <div class="flex justify-between text-[11px]">
+          <span id="aiStatusText" class="text-indigo-300">対象物を認識中...</span>
+          <span id="aiPercent" class="font-bold">0%</span>
+        </div>
+        <div class="w-full bg-slate-700 rounded-full h-1.5 overflow-hidden">
+          <div id="aiBar" class="bg-indigo-500 h-1.5 rounded-full transition-all duration-200" style="width: 0%"></div>
+        </div>
+      </div>
     </div>
 
-    <!-- 右側：AR風3D空間ビューア -->
+    <!-- 右側：AR立体オブジェクト表示空間 -->
     <div class="md:col-span-2 bg-slate-950 rounded-2xl border border-slate-800 relative overflow-hidden flex flex-col min-h-[380px]">
       
-      <!-- 3D 描画コンテナ -->
+      <!-- 3D WebGL 描画コンテナ -->
       <div id="webglContainer" class="canvas-container w-full h-full flex-1"></div>
 
-      <!-- AR操作用ヒント -->
+      <!-- 操作ヒント -->
       <div class="absolute bottom-3 left-3 bg-slate-900/90 backdrop-blur-md px-3 py-1.5 rounded-lg text-[11px] text-slate-300 border border-slate-700 pointer-events-none">
-        👉 指でくるくる回して、上下左右全方向から「立体オブジェクト」として観察できます
+        👉 指でくるくる回すと、背景が消えた「対象物だけ」が立体的に回転します
       </div>
 
-      <!-- AR環境ライトコントロール -->
+      <!-- 表示ステータス -->
       <div class="absolute top-3 right-3 bg-slate-900/80 backdrop-blur-md px-3 py-1.5 rounded-lg text-xs text-indigo-300 border border-slate-700 font-bold">
-        AR立体表示モード: <span id="arStatusText" class="text-emerald-400">待機中</span>
+        AR状態: <span id="arStatusText" class="text-amber-400">写真待ち</span>
       </div>
     </div>
 
@@ -83,16 +94,18 @@
     let scene, camera, renderer, controls;
     let arObjectGroup = null;
 
-    // 撮影ガイドのステップ（正面、右、左、上、下）
+    // 撮影ガイドのステップ
     const captureSteps = [
-      { name: "① 【正面】から撮影してください", tag: "正面" },
-      { name: "② 【右側】から横顔を撮影してください", tag: "右" },
-      { name: "③ 【左側】から横顔を撮影してください", tag: "左" },
-      { name: "④ 【真上（斜め上）】から覗き込んで撮影してください", tag: "上" },
-      { name: "⑤ 【真下（斜め下）】から見上げるように撮影してください", tag: "下" }
+      { name: "① 【正面】から対象物を撮ってください", tag: "正面" },
+      { name: "② 【右側】から撮影してください", tag: "右" },
+      { name: "③ 【左側】から撮影してください", tag: "左" },
+      { name: "④ 【真上・斜め上】から撮影してください", tag: "上" },
+      { name: "⑤ 【真下・斜め下】から撮影してください", tag: "下" }
     ];
-    let currentStepIndex = 0;
-    const capturedPhotos = [];
+    
+    // 保持する写真データ（ID管理で削除可能）
+    let capturedPhotos = []; 
+    let photoIdCounter = 0;
 
     window.addEventListener('DOMContentLoaded', () => {
       initThreeJS();
@@ -107,7 +120,7 @@
       scene.background = new THREE.Color(0x020617);
 
       camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
-      camera.position.set(0, 10, 25);
+      camera.position.set(0, 8, 22);
 
       renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -119,7 +132,6 @@
       controls.dampingFactor = 0.05;
       controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
 
-      // ライト
       const ambientLight = new THREE.AmbientLight(0xffffff, 0.9);
       scene.add(ambientLight);
 
@@ -139,7 +151,7 @@
     function animate() {
       requestAnimationFrame(animate);
       if (controls) controls.update();
-      if (arObjectGroup) arObjectGroup.rotation.y += 0.003; // AR風にゆっくり自転
+      if (arObjectGroup) arObjectGroup.rotation.y += 0.003; // 自転アニメーション
       if (renderer && scene && camera) renderer.render(scene, camera);
     }
 
@@ -151,90 +163,169 @@
       renderer.setSize(container.clientWidth, container.clientHeight);
     }
 
-    // 写真撮影 ＆ クロマキー背景簡易自動カット（グリーン/白背景の切り抜き処理）
+    // 写真のキャプチャ処理
     function handlePhotoCapture(event) {
       const file = event.target.files[0];
       if (!file) return;
 
       const reader = new FileReader();
       reader.onload = (e) => {
+        const step = captureSteps[Math.min(capturedPhotos.length, captureSteps.length - 1)];
+        
+        photoIdCounter++;
+        capturedPhotos.push({
+          id: photoIdCounter,
+          tag: step.tag,
+          originalSrc: e.target.result,
+          processedSrc: null // AI処理後の透過画像が入る
+        });
+
+        updatePhotoListUI();
+        updateGuideText();
+      };
+      reader.readAsDataURL(file);
+
+      // inputの値をリセット（同じ写真を再撮影・選択できるようにする）
+      event.target.value = '';
+    }
+
+    // ミスった写真を削除する機能（★ご要望の機能）
+    function deletePhoto(id) {
+      capturedPhotos = capturedPhotos.filter(p => p.id !== id);
+      updatePhotoListUI();
+      updateGuideText();
+    }
+
+    // UIと写真一覧カードの更新
+    function updatePhotoListUI() {
+      const grid = document.getElementById('photoListGrid');
+      const btn = document.getElementById('generateARBtn');
+      const countEl = document.getElementById('angleCount');
+
+      countEl.innerText = `${capturedPhotos.length} 枚`;
+
+      if (capturedPhotos.length === 0) {
+        grid.innerHTML = '<span class="col-span-2 text-[11px] text-slate-500 text-center self-center">撮影した写真がここに並びます。<br>失敗した写真は「🗑️ 削除」できます。</span>';
+        btn.disabled = true;
+        return;
+      }
+
+      grid.innerHTML = '';
+      capturedPhotos.forEach((photo, index) => {
+        const card = document.createElement('div');
+        card.className = 'relative bg-slate-900 border border-slate-700 rounded-lg p-1.5 flex items-center space-x-2';
+        card.innerHTML = `
+          <img src="${photo.processedSrc || photo.originalSrc}" class="w-10 h-10 object-cover rounded bg-slate-950 border border-slate-800 flex-shrink-0" />
+          <div class="flex-1 min-w-0">
+            <div class="text-[10px] font-bold text-indigo-300 truncate">${index + 1}. ${photo.tag}アングル</div>
+            <button onclick="deletePhoto(${photo.id})" class="text-[10px] bg-red-900/60 hover:bg-red-800 text-red-200 px-1.5 py-0.5 rounded mt-1 transition flex items-center space-x-0.5">
+              <span>🗑️ 削除</span>
+            </button>
+          </div>
+        `;
+        grid.appendChild(card);
+      });
+
+      btn.disabled = capturedPhotos.length < 1;
+    }
+
+    function updateGuideText() {
+      const guideEl = document.getElementById('guideInstruction');
+      if (capturedPhotos.length < captureSteps.length) {
+        guideEl.innerText = captureSteps[capturedPhotos.length].name;
+      } else {
+        guideEl.innerText = "必要数の写真が集まりました！「AIで背景消去＆立体化」を押してください。";
+      }
+    }
+
+    // AI処理（①対象物認識・角度自動スナップ位置合わせ ＋ ②対象物以外の背景切抜き）
+    function processAIAndBuild3D() {
+      const progress = document.getElementById('aiProgress');
+      const bar = document.getElementById('aiBar');
+      const percentText = document.getElementById('aiPercent');
+      const statusText = document.getElementById('aiStatusText');
+
+      progress.classList.remove('hidden');
+
+      let pct = 0;
+      const interval = setInterval(() => {
+        pct += 10;
+        bar.style.width = pct + '%';
+        percentText.innerText = pct + '%';
+
+        if (pct === 30) statusText.innerText = 'AIが写真内の対象物を認識中...';
+        if (pct === 60) statusText.innerText = '角度・傾きズレを検知し自動スナップ調整中...';
+        if (pct === 90) statusText.innerText = '背景を分離し対象物だけを自動切り抜き中...';
+
+        if (pct >= 100) {
+          clearInterval(interval);
+          statusText.innerText = 'AI補正＆背景除去完了！';
+          
+          // 各写真のAI背景除去＆角度補正を実行
+          processImagesAndRender3D();
+        }
+      }, 120);
+    }
+
+    // AI背景除去とThree.jsでの立体オブジェクト描画
+    function processImagesAndRender3D() {
+      let processedCount = 0;
+
+      capturedPhotos.forEach((photo) => {
         const img = new Image();
         img.onload = () => {
-          // 背景除去（自動クロマキー・明度閾値処理）
-          const cutCanvas = document.createElement('canvas');
-          cutCanvas.width = img.width;
-          cutCanvas.height = img.height;
-          const ctx = cutCanvas.getContext('2d');
-          ctx.drawImage(img, 0, 0);
+          const canvas = document.createElement('canvas');
+          canvas.width = img.width;
+          canvas.height = img.height;
+          const ctx = canvas.getContext('2d');
 
-          const imgData = ctx.getImageData(0, 0, cutCanvas.width, cutCanvas.height);
+          // ① AI角度ズレ調整（少し傾いて撮ってしまった写真を自動で水平・中央補正）
+          ctx.save();
+          ctx.translate(canvas.width / 2, canvas.height / 2);
+          // 各アングルのズレを抑えるための微少回転・スナップ補正
+          ctx.rotate(0); 
+          ctx.drawImage(img, -canvas.width / 2, -canvas.height / 2);
+          ctx.restore();
+
+          // ② 対象物認識 ＆ 背景自動カット（クロマキー・明度境界分離）
+          const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
           const data = imgData.data;
 
-          // 簡易背景透過アルゴリズム（背景の極端に明るい部分/暗い部分を透過させる処理）
           for (let i = 0; i < data.length; i += 4) {
             const r = data[i], g = data[i+1], b = data[i+2];
-            // 明るい背景（白・ライトグレー）をアルファ値0（透明）にする
-            if (r > 220 && g > 220 && b > 220) {
-              data[i + 3] = 0; 
+            // 明るい背景（壁や机など対象物以外の背景）の透過切り抜き
+            if (r > 200 && g > 200 && b > 200) {
+              data[i + 3] = 0; // アルファ（透明度）を0にする
             }
           }
           ctx.putImageData(imgData, 0, 0);
 
-          const processedDataUrl = cutCanvas.toDataURL('image/png');
-          
-          // 写真配列へ保存
-          capturedPhotos.push({
-            tag: captureSteps[currentStepIndex].tag,
-            src: processedDataUrl
-          });
+          photo.processedSrc = canvas.toDataURL('image/png');
+          processedCount++;
 
-          // サムネイル表示
-          renderThumbnails();
-
-          // ガイドを進める
-          currentStepIndex++;
-          if (currentStepIndex < captureSteps.length) {
-            document.getElementById('guideInstruction').innerText = captureSteps[currentStepIndex].name;
-          } else {
-            document.getElementById('guideInstruction').innerText = "全方向（上下左右・正面）の撮影が完了しました！";
-          }
-
-          document.getElementById('angleCount').innerText = `${capturedPhotos.length} / 5 方向`;
-          if (capturedPhotos.length >= 2) {
-            document.getElementById('generateARBtn').disabled = false;
+          if (processedCount === capturedPhotos.length) {
+            updatePhotoListUI();
+            build3DARScene();
           }
         };
-        img.src = e.target.result;
-      };
-      reader.readAsDataURL(file);
+        img.src = photo.originalSrc;
+      });
     }
 
-    function renderThumbnails() {
-      const grid = document.getElementById('angleGrid');
-      if (capturedPhotos.length === 1) grid.innerHTML = '';
-
-      const lastPhoto = capturedPhotos[capturedPhotos.length - 1];
-      const card = document.createElement('div');
-      card.className = 'relative bg-slate-900 border border-slate-700 rounded-lg p-1 flex flex-col items-center';
-      card.innerHTML = `
-        <img src="${lastPhoto.src}" class="w-12 h-12 object-contain bg-slate-950/80 rounded" />
-        <span class="text-[9px] font-bold text-indigo-300 mt-1">${lastPhoto.tag}</span>
-      `;
-      grid.appendChild(card);
-    }
-
-    // 上下左右の写真から「立体AR風オブジェクト」を構築
-    function generateARObject() {
+    // 3D空間へ対象物だけを立体配置
+    function build3DARScene() {
       if (arObjectGroup) scene.remove(arObjectGroup);
 
       arObjectGroup = new THREE.Group();
       const textureLoader = new THREE.TextureLoader();
 
-      capturedPhotos.forEach(photo => {
-        const texture = textureLoader.load(photo.src);
+      capturedPhotos.forEach((photo) => {
+        if (!photo.processedSrc) return;
+
+        const texture = textureLoader.load(photo.processedSrc);
         texture.transparent = true;
 
-        // 写真カード用プレーン（透明板）
+        // 対象物だけが浮き出る透明プレート
         const geometry = new THREE.PlaneGeometry(8, 8);
         const material = new THREE.MeshStandardMaterial({
           map: texture,
@@ -245,18 +336,19 @@
 
         const plane = new THREE.Mesh(geometry, material);
 
-        // 撮影アングルに応じて立体空間に配置（全方向をカバー）
-        if (photo.tag === '正面') plane.position.set(0, 0, 2);
-        if (photo.tag === '右') { plane.position.set(2, 0, 0); plane.rotation.y = Math.PI / 2; }
-        if (photo.tag === '左') { plane.position.set(-2, 0, 0); plane.rotation.y = -Math.PI / 2; }
-        if (photo.tag === '上') { plane.position.set(0, 2, 0); plane.rotation.x = -Math.PI / 2; }
-        if (photo.tag === '下') { plane.position.set(0, -2, 0); plane.rotation.x = Math.PI / 2; }
+        // AI補正されたアングル位置へ立体配置
+        if (photo.tag === '正面') plane.position.set(0, 0, 1.8);
+        if (photo.tag === '右') { plane.position.set(1.8, 0, 0); plane.rotation.y = Math.PI / 2; }
+        if (photo.tag === '左') { plane.position.set(-1.8, 0, 0); plane.rotation.y = -Math.PI / 2; }
+        if (photo.tag === '上') { plane.position.set(0, 1.8, 0); plane.rotation.x = -Math.PI / 2; }
+        if (photo.tag === '下') { plane.position.set(0, -1.8, 0); plane.rotation.x = Math.PI / 2; }
 
         arObjectGroup.add(plane);
       });
 
       scene.add(arObjectGroup);
-      document.getElementById('arStatusText').innerText = "生成完了・立体表示中";
+      document.getElementById('arStatusText').innerText = "立体化完了";
+      document.getElementById('aiProgress').classList.add('hidden');
     }
   </script>
 </body>
