@@ -3,126 +3,134 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>理科3D観察：指なぞり切り抜き＆立体オブジェクト化</title>
+  <title>AI全自動背景削除 3D立体観察アプリ</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Three.js -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <!-- Google MediaPipe AI Vision Task -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/vision_bundle.js" crossorigin="anonymous"></script>
   <style>
     body { touch-action: manipulation; overscroll-behavior: none; -webkit-user-select: none; user-select: none; }
     .canvas-container canvas { touch-action: none; }
-    #drawCanvas { touch-action: none; }
   </style>
 </head>
 <body class="bg-slate-900 text-white min-h-screen flex flex-col p-3">
 
   <header class="p-2 border-b border-slate-700 flex justify-between items-center mb-2">
-    <h1 class="text-sm md:text-base font-bold text-indigo-400">理科3D立体観察ノート（指なぞり切り抜き対応）</h1>
-    <span class="text-xs bg-indigo-900 text-indigo-200 px-2.5 py-0.5 rounded-full">全対象物（生物・無機物）対応</span>
+    <h1 class="text-sm md:text-base font-bold text-indigo-400">AI全自動セグメンテーション 3D立体観察ノート</h1>
+    <span id="aiStatusBadge" class="text-xs bg-amber-900 text-amber-200 px-2.5 py-0.5 rounded-full font-bold">AIモデル準備中...</span>
   </header>
 
   <main class="flex-1 max-w-6xl w-full mx-auto grid grid-cols-1 md:grid-cols-3 gap-3">
 
-    <!-- 左側：撮影＆写真管理 -->
+    <!-- 左側：撮影＆写真管理パネル -->
     <div class="bg-slate-800 p-3 rounded-2xl border border-slate-700 flex flex-col space-y-3">
       
       <div class="bg-slate-900 p-3 rounded-xl border border-slate-700">
-        <div class="text-xs text-indigo-300 font-bold mb-1">撮影・切り抜き手順:</div>
+        <div class="text-xs text-indigo-300 font-bold mb-1">ガイド:</div>
         <div id="guideInstruction" class="text-sm font-extrabold text-amber-300">
-          ① 【正面】から対象物（生物・無機物）を撮影してください
+          ① 【正面】から対象物（生き物・植物・無機物）を撮影してください
         </div>
-        <div class="text-[10px] text-slate-400 mt-1">※撮影後、切り抜きたい物の周りを指でなぞって囲みます。</div>
+        <div class="text-[10px] text-slate-400 mt-1">※撮影するとAIが自動で物体を検出し、背景をクリアに消去します。</div>
       </div>
 
       <div>
-        <input type="file" id="cameraInput" accept="image/*" capture="environment" class="hidden" onchange="handlePhotoCapture(event)">
-        <label for="cameraInput" class="w-full bg-indigo-600 active:bg-indigo-700 text-white font-bold py-3 px-4 rounded-xl text-xs flex items-center justify-center space-x-2 cursor-pointer shadow">
-          <span>📷 対象物を撮影する</span>
+        <input type="file" id="cameraInput" accept="image/*" capture="environment" class="hidden" onchange="handlePhotoCapture(event)" disabled>
+        <label id="captureBtnLabel" for="cameraInput" class="w-full bg-slate-700 text-slate-400 font-bold py-3 px-4 rounded-xl text-xs flex items-center justify-center space-x-2 cursor-not-allowed shadow transition">
+          <span>📷 AIの準備完了を待っています...</span>
         </label>
       </div>
 
       <!-- 写真リスト -->
       <div class="flex-1 flex flex-col">
         <div class="text-xs font-bold text-slate-300 mb-1 flex justify-between items-center">
-          <span>切り抜き済み写真リスト</span>
+          <span>AI解析済みリスト</span>
           <span id="angleCount" class="text-indigo-400 font-mono">0 枚</span>
         </div>
-        <div id="photoListGrid" class="grid grid-cols-2 gap-2 p-2 bg-slate-950 rounded-xl border border-slate-800 min-h-[140px] max-h-[200px] overflow-y-auto">
-          <span class="col-span-2 text-[11px] text-slate-500 text-center self-center">撮影した写真が表示されます。<br>不要な写真は個別に削除できます。</span>
+        <div id="photoListGrid" class="grid grid-cols-2 gap-2 p-2 bg-slate-950 rounded-xl border border-slate-800 min-h-[140px] max-h-[220px] overflow-y-auto">
+          <span class="col-span-2 text-[11px] text-slate-500 text-center self-center">撮影した写真が自動で背景除去されて追加されます。</span>
         </div>
       </div>
 
       <button id="generateARBtn" onclick="build3DARScene()" disabled class="w-full bg-emerald-600 active:bg-emerald-700 disabled:bg-slate-700 disabled:text-slate-500 text-white font-bold py-3 rounded-xl text-xs transition shadow flex items-center justify-center space-x-1">
-        <span>✨ 切り抜いた対象を立体（3D）化</span>
+        <span>✨ 3D立体表示（回転観察）</span>
       </button>
+
+      <!-- AI解析ログ表示 -->
+      <div id="aiLogArea" class="hidden text-[10px] bg-slate-950 p-2 rounded border border-slate-800 text-indigo-300 font-mono">
+        AI解析中: 被写体セグメンテーション実行中...
+      </div>
     </div>
 
-    <!-- 右側：3D空間表示ビューア -->
+    <!-- 右側：3D表示ビューア -->
     <div class="md:col-span-2 bg-slate-950 rounded-2xl border border-slate-800 relative overflow-hidden flex flex-col min-h-[380px]">
       <div id="webglContainer" class="canvas-container w-full h-full flex-1"></div>
       
       <div class="absolute bottom-3 left-3 bg-slate-900/90 backdrop-blur-md px-3 py-1.5 rounded-lg text-[11px] text-slate-300 border border-slate-700 pointer-events-none">
-        👉 画面を回すと、撮影した角度の立体オブジェクト画像に自動切り替わります
+        👉 画面を指で回すと、撮影した角度の背景透過画像へスムーズに切り替わります
       </div>
     </div>
 
   </main>
-
-  <!-- 指でなぞって囲む切り抜きダイアログ -->
-  <div id="cropModal" class="hidden fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex flex-col items-center justify-center p-3">
-    <div class="bg-slate-800 border border-slate-700 rounded-2xl p-3 max-w-lg w-full flex flex-col space-y-2">
-      
-      <div class="flex justify-between items-center border-b border-slate-700 pb-2">
-        <span class="text-xs font-bold text-indigo-300">👉 残したい対象物の周りを指でぐるっと囲んでください</span>
-        <button onclick="resetDraw()" class="text-[10px] bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded text-slate-200">描き直す</button>
-      </div>
-
-      <div class="relative bg-black rounded-xl overflow-hidden flex justify-center items-center max-h-[55vh]">
-        <canvas id="drawCanvas" class="max-w-full max-h-[55vh] object-contain cursor-crosshair"></canvas>
-      </div>
-
-      <!-- 切り抜きぼかし/感度調整 -->
-      <div class="space-y-1 bg-slate-900/60 p-2 rounded-lg border border-slate-700">
-        <div class="flex justify-between text-[11px] text-slate-300">
-          <span>輪郭の境界調整（ボカシ）:</span>
-          <span id="featherVal" class="font-bold text-amber-400">3 px</span>
-        </div>
-        <input type="range" id="featherRange" min="0" max="10" value="3" class="w-full h-1.5 bg-slate-700 rounded cursor-pointer" oninput="document.getElementById('featherVal').innerText = this.value + ' px'">
-      </div>
-
-      <div class="flex justify-end space-x-2 pt-1">
-        <button onclick="applyFreehandCrop()" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white text-xs py-2.5 rounded-xl font-bold shadow">
-          この範囲を切り抜く
-        </button>
-      </div>
-    </div>
-  </div>
 
   <script>
     let scene, camera, renderer, controls;
     let spriteMeshMap = {}; 
     let activeSprite = null;
 
+    // Google MediaPipe AI Segmenter
+    let imageSegmenter;
+    const { ImageSegmenter, FilesetResolver } = vision;
+
     const captureSteps = [
-      { name: "① 【正面】から撮ってください", tag: "正面" },
-      { name: "② 【右側】から撮ってください", tag: "右" },
-      { name: "③ 【左側】から撮ってください", tag: "左" },
-      { name: "④ 【上または下】から撮ってください", tag: "上・下" }
+      { name: "① 【正面】から撮影してください", tag: "正面" },
+      { name: "② 【右側】から撮影してください", tag: "右" },
+      { name: "③ 【左側】から撮影してください", tag: "左" },
+      { name: "④ 【真上・斜め上】から撮影してください", tag: "上・下" }
     ];
 
     let capturedPhotos = []; 
     let photoIdCounter = 0;
-    let currentProcessingPhoto = null;
-
-    // キャンバス描画用データ
-    let drawPoints = [];
-    let isDrawing = false;
-    let originalImgObject = null;
 
     window.addEventListener('DOMContentLoaded', () => {
       initThreeJS();
-      setupCanvasTouchEvents();
+      initMediaPipeAI();
     });
 
+    // 1. Google MediaPipe AIの初期化
+    async function initMediaPipeAI() {
+      try {
+        const filesetResolver = await FilesetResolver.forVisionTasks(
+          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
+        );
+
+        imageSegmenter = await ImageSegmenter.createFromOptions(filesetResolver, {
+          baseOptions: {
+            modelAssetPath: "https://storage.googleapis.com/mediapipe-models/image_segmenter/deeplab_v3/float32/1/deeplab_v3.tflite",
+            delegate: "GPU"
+          },
+          outputCategoryMask: true,
+          outputConfidenceMasks: false
+        });
+
+        // AI準備完了
+        const badge = document.getElementById('aiStatusBadge');
+        badge.innerText = "AIエンジン動作中 (GPU)";
+        badge.className = "text-xs bg-emerald-900 text-emerald-200 px-2.5 py-0.5 rounded-full font-bold";
+
+        const btnLabel = document.getElementById('captureBtnLabel');
+        btnLabel.className = "w-full bg-indigo-600 active:bg-indigo-700 text-white font-bold py-3 px-4 rounded-xl text-xs flex items-center justify-center space-x-2 cursor-pointer shadow transition";
+        btnLabel.innerHTML = "<span>📷 写真を撮影する（AI自動背景消去）</span>";
+
+        document.getElementById('cameraInput').disabled = false;
+      } catch (e) {
+        console.error("AIロードエラー:", e);
+        document.getElementById('aiStatusBadge').innerText = "AIエラー (代替モード動作)";
+      }
+    }
+
+    // 2. Three.js初期化
     function initThreeJS() {
       const container = document.getElementById('webglContainer');
       const width = container.clientWidth || window.innerWidth;
@@ -172,147 +180,88 @@
       renderer.setSize(container.clientWidth, container.clientHeight);
     }
 
+    // 3. 写真キャプチャ＆AI自動セグメンテーション
     function handlePhotoCapture(event) {
       const file = event.target.files[0];
       if (!file) return;
 
+      const logArea = document.getElementById('aiLogArea');
+      logArea.classList.remove('hidden');
+      logArea.innerText = "AIが撮影画像を解析中...（対象物を自動検出中）";
+
       const reader = new FileReader();
       reader.onload = (e) => {
-        photoIdCounter++;
-        const step = captureSteps[Math.min(capturedPhotos.length, captureSteps.length - 1)];
-
-        currentProcessingPhoto = {
-          id: photoIdCounter,
-          tag: step.tag,
-          originalSrc: e.target.result,
-          processedSrc: e.target.result
+        const img = new Image();
+        img.onload = () => {
+          runAISegmentation(img);
         };
-
-        openCropModal(e.target.result);
+        img.src = e.target.result;
       };
       reader.readAsDataURL(file);
       event.target.value = '';
     }
 
-    // モーダルオープン＆キャンバス準備
-    function openCropModal(imgSrc) {
-      const modal = document.getElementById('cropModal');
-      const canvas = document.getElementById('drawCanvas');
-      const ctx = canvas.getContext('2d');
-      originalImgObject = new Image();
-
-      originalImgObject.onload = () => {
-        canvas.width = originalImgObject.width;
-        canvas.height = originalImgObject.height;
-        ctx.drawImage(originalImgObject, 0, 0);
-        drawPoints = [];
-        modal.classList.remove('hidden');
-      };
-      originalImgObject.src = imgSrc;
-    }
-
-    // なぞり描きイベント（iPadタッチ・マウス両対応）
-    function setupCanvasTouchEvents() {
-      const canvas = document.getElementById('drawCanvas');
-
-      const getPos = (e) => {
-        const rect = canvas.getBoundingClientRect();
-        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-        
-        const scaleX = canvas.width / rect.width;
-        const scaleY = canvas.height / rect.height;
-
-        return {
-          x: (clientX - rect.left) * scaleX,
-          y: (clientY - rect.top) * scaleY
-        };
-      };
-
-      const startDraw = (e) => {
-        isDrawing = true;
-        drawPoints = [getPos(e)];
-      };
-
-      const moveDraw = (e) => {
-        if (!isDrawing) return;
-        drawPoints.push(getPos(e));
-        redrawCanvas();
-      };
-
-      const endDraw = () => {
-        isDrawing = false;
-      };
-
-      canvas.addEventListener('touchstart', startDraw, { passive: true });
-      canvas.addEventListener('touchmove', moveDraw, { passive: true });
-      canvas.addEventListener('touchend', endDraw, { passive: true });
-
-      canvas.addEventListener('mousedown', startDraw);
-      canvas.addEventListener('mousemove', moveDraw);
-      canvas.addEventListener('mouseup', endDraw);
-    }
-
-    function redrawCanvas() {
-      const canvas = document.getElementById('drawCanvas');
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(originalImgObject, 0, 0);
-
-      if (drawPoints.length < 2) return;
-
-      ctx.beginPath();
-      ctx.strokeStyle = '#38bdf8'; // 明るい青ライン
-      ctx.lineWidth = Math.max(canvas.width, canvas.height) * 0.008;
-      ctx.moveTo(drawPoints[0].x, drawPoints[0].y);
-
-      for (let i = 1; i < drawPoints.length; i++) {
-        ctx.lineTo(drawPoints[i].x, drawPoints[i].y);
-      }
-      ctx.closePath();
-      ctx.stroke();
-
-      ctx.fillStyle = 'rgba(56, 189, 248, 0.2)';
-      ctx.fill();
-    }
-
-    function resetDraw() {
-      drawPoints = [];
-      const canvas = document.getElementById('drawCanvas');
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(originalImgObject, 0, 0);
-    }
-
-    // 指で囲んだ内側だけを抽出して背景カット
-    function applyFreehandCrop() {
-      if (drawPoints.length < 3) {
-        alert("対象物の周りを指でぐるっと囲んでください。");
+    // 4. AIによる自動背景削除メイン処理
+    function runAISegmentation(imgElement) {
+      if (!imageSegmenter) {
+        fallbackProcess(imgElement);
         return;
       }
 
-      const canvas = document.createElement('canvas');
-      canvas.width = originalImgObject.width;
-      canvas.height = originalImgObject.height;
-      const ctx = canvas.getContext('2d');
+      imageSegmenter.segment(imgElement, (result) => {
+        const mask = result.categoryMask;
+        const width = mask.width;
+        const height = mask.height;
 
-      const featherVal = parseInt(document.getElementById('featherRange').value);
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
 
-      // ① 囲んだ領域をマスク作成
-      ctx.beginPath();
-      ctx.moveTo(drawPoints[0].x, drawPoints[0].y);
-      for (let i = 1; i < drawPoints.length; i++) {
-        ctx.lineTo(drawPoints[i].x, drawPoints[i].y);
-      }
-      ctx.closePath();
-      ctx.clip(); // 内側のみをマスク
+        // 元画像を一度描画
+        ctx.drawImage(imgElement, 0, 0, width, height);
 
-      // ② マスク内部に対象物を描画
-      ctx.drawImage(originalImgObject, 0, 0);
+        const imgData = ctx.getImageData(0, 0, width, height);
+        const pixels = imgData.data;
+        const maskData = mask.getAsUint8Array();
 
-      currentProcessingPhoto.processedSrc = canvas.toDataURL('image/png');
-      capturedPhotos.push(currentProcessingPhoto);
-      currentProcessingPhoto = null;
+        // AIのセグメンテーションマスクを元に背景（カテゴリ0）のピクセルを全自動透明化
+        for (let i = 0; i < maskData.length; i++) {
+          const category = maskData[i];
+          if (category === 0) { // 背景領域
+            pixels[i * 4 + 3] = 0; // α（透明度）を0にする
+          }
+        }
 
-      document.getElementById('cropModal').classList.add('hidden');
+        ctx.putImageData(imgData, 0, 0);
+
+        photoIdCounter++;
+        const step = captureSteps[Math.min(capturedPhotos.length, captureSteps.length - 1)];
+
+        capturedPhotos.push({
+          id: photoIdCounter,
+          tag: step.tag,
+          processedSrc: canvas.toDataURL('image/png')
+        });
+
+        document.getElementById('aiLogArea').classList.add('hidden');
+        updatePhotoListUI();
+        updateGuideText();
+      });
+    }
+
+    // AIが非対応環境の場合フォールバック
+    function fallbackProcess(imgElement) {
+      photoIdCounter++;
+      const step = captureSteps[Math.min(capturedPhotos.length, captureSteps.length - 1)];
+
+      capturedPhotos.push({
+        id: photoIdCounter,
+        tag: step.tag,
+        processedSrc: imgElement.src
+      });
+
+      document.getElementById('aiLogArea').classList.add('hidden');
       updatePhotoListUI();
       updateGuideText();
     }
@@ -329,7 +278,7 @@
       document.getElementById('angleCount').innerText = `${capturedPhotos.length} 枚`;
 
       if (capturedPhotos.length === 0) {
-        grid.innerHTML = '<span class="col-span-2 text-[11px] text-slate-500 text-center self-center">撮影した写真が表示されます。</span>';
+        grid.innerHTML = '<span class="col-span-2 text-[11px] text-slate-500 text-center self-center">撮影した写真が自動で背景除去されて追加されます。</span>';
         btn.disabled = true;
         return;
       }
@@ -358,10 +307,11 @@
       if (capturedPhotos.length < captureSteps.length) {
         guideEl.innerText = captureSteps[capturedPhotos.length].name;
       } else {
-        guideEl.innerText = "必要数が揃いました！「立体化」を押してください。";
+        guideEl.innerText = "必要枚数が揃いました！「3D立体表示」を押してください。";
       }
     }
 
+    // 多方向ビルボード形式での立体表示構築
     function build3DARScene() {
       if (activeSprite) scene.remove(activeSprite);
 
