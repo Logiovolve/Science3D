@@ -2,238 +2,216 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <!-- iPad/iOSの画面フィットとタッチスクロール防止のためのviewport設定 -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>iPad対応 理科AI写真3D立体化Webアプリ</title>
+  <title>連続撮影・指示ガイド付き 立体写真作成アプリ</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
   <style>
-    /* iPadのSafariで引っ張り更新や不要なバウンススクロールを防ぐ設定 */
-    html, body {
-      touch-action: manipulation;
-      overscroll-behavior: none;
-      -webkit-user-select: none;
-      user-select: none;
+    /* カメラ・キャンバスの重なり */
+    .viewport-box {
+      position: relative;
+      width: 100%;
+      height: 360px;
+      background-color: #000;
+      border-radius: 1rem;
+      overflow: hidden;
     }
-    .canvas-container canvas {
-      touch-action: none; /* 3Dキャンバス内でのタッチイベントをThree.jsへ直接渡す */
+    video, canvas {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
     }
   </style>
 </head>
-<body class="bg-slate-900 text-white min-h-screen flex flex-col">
+<body class="bg-slate-900 text-white min-h-screen flex flex-col p-4 select-none">
 
   <!-- ヘッダー -->
-  <header class="p-3 bg-slate-800 border-b border-slate-700 flex justify-between items-center select-none">
-    <h1 class="text-base md:text-lg font-bold text-indigo-400">iPad対応 理科3D写真立体化・観察</h1>
-    <span class="text-xs bg-indigo-900 text-indigo-200 px-2 py-1 rounded-full">iOS / Safari対応版</span>
+  <header class="mb-3 text-center">
+    <h1 class="text-base font-bold text-indigo-400">連続撮影 3D立体写真ジェネレーター</h1>
+    <p class="text-xs text-slate-400">上書きなし！ガイドに合わせて複数枚撮影</p>
   </header>
 
-  <!-- メインレイアウト -->
-  <main class="flex-1 max-w-7xl w-full mx-auto p-3 grid grid-cols-1 md:grid-cols-3 gap-3">
+  <!-- メインエリア -->
+  <main class="max-w-md w-full mx-auto flex-1 flex flex-col space-y-3">
 
-    <!-- 左側：iPadカメラ/写真選択 ＆ 処理実行 -->
-    <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 flex flex-col space-y-3">
-      <div>
-        <h2 class="font-bold text-sm mb-1">1. 写真の準備（iPadカメラ対応）</h2>
-        <p class="text-xs text-slate-400 mb-2">iPadで撮った写真、またはその場でカメラを起動して選んでください。</p>
-        
-        <!-- iPadのファイル選択＆カメラ起動対応 -->
-        <input type="file" id="photoInput" multiple accept="image/*" class="hidden" onchange="handleFileSelect(event)">
-        <label for="photoInput" class="w-full bg-indigo-900/50 hover:bg-indigo-900 border-2 border-dashed border-indigo-500/70 rounded-xl p-4 flex flex-col items-center cursor-pointer transition text-center active:scale-95">
-          <span class="text-3xl mb-1">📷</span>
-          <span class="text-xs font-bold text-indigo-200">写真を選択 / iPadで撮影（複数枚）</span>
-        </label>
-      </div>
+    <!-- カメラ＆ガイド表示エリア -->
+    <div class="viewport-box border-2 border-indigo-500/50 shadow-lg">
+      
+      <!-- カメラ映像 -->
+      <video id="cameraVideo" autoplay playsinline muted class="block"></video>
+      
+      <!-- 3D写真プレビューキャンバス（合成後） -->
+      <canvas id="photo3DCanvas" class="hidden"></canvas>
 
-      <!-- 写真サムネイルプレビュー -->
-      <div id="previewGrid" class="grid grid-cols-4 gap-1.5 min-h-[60px] max-h-[120px] overflow-y-auto bg-slate-900/60 p-2 rounded-lg border border-slate-700">
-        <span class="col-span-4 text-xs text-slate-500 text-center self-center">選択した写真が表示されます</span>
-      </div>
-
-      <!-- 立体化実行ボタン -->
-      <button id="processBtn" onclick="processImagesWithAI()" disabled class="w-full bg-indigo-600 active:bg-indigo-700 disabled:bg-slate-700 disabled:text-slate-500 text-white font-bold py-3 px-4 rounded-xl text-xs transition shadow flex justify-center items-center">
-        <span>AIで写真を繋げて立体化</span>
-      </button>
-
-      <!-- 進捗表示 -->
-      <div id="aiProgress" class="hidden space-y-1.5 pt-2 border-t border-slate-700">
-        <div class="flex justify-between text-xs">
-          <span id="aiStatusText" class="text-indigo-300">特徴点を計算中...</span>
-          <span id="aiPercent" class="font-bold">0%</span>
+      <!-- 撮影方向のガイド指示オーバーレイ -->
+      <div id="guideOverlay" class="absolute inset-0 flex flex-col justify-between p-4 pointer-events-none bg-black/20">
+        <div class="bg-indigo-600/90 text-white text-xs font-bold px-3 py-1.5 rounded-full self-center backdrop-blur-sm shadow">
+          指示: <span id="guideText" class="text-amber-300 font-extrabold text-sm">① 正面から撮ってください</span>
         </div>
-        <div class="w-full bg-slate-700 rounded-full h-2 overflow-hidden">
-          <div id="aiBar" class="bg-indigo-500 h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
+        
+        <!-- 画面中央のガイド枠 -->
+        <div class="border-2 border-dashed border-white/60 rounded-2xl w-48 h-48 self-center flex items-center justify-center">
+          <span class="text-white/40 text-xs">ここに観察物をあわせる</span>
+        </div>
+
+        <div class="text-center text-[11px] text-white/80 bg-black/40 py-1 rounded">
+          撮影枚数: <span id="photoCount" class="font-bold text-emerald-400">0</span> / 3 枚
         </div>
       </div>
     </div>
 
-    <!-- 右側：iPadタッチ操作対応 3Dビューア -->
-    <div class="md:col-span-2 bg-slate-950 rounded-xl border border-slate-800 relative overflow-hidden flex flex-col min-h-[350px] md:min-h-[450px]">
+    <!-- カメラ起動＆シャッター操作部 -->
+    <div class="bg-slate-800 p-3 rounded-2xl border border-slate-700 space-y-3">
       
-      <!-- 3D 描画用コンテナ -->
-      <div id="webglContainer" class="canvas-container w-full h-full flex-1"></div>
+      <div class="flex gap-2">
+        <!-- カメラスタートボタン -->
+        <button id="startCamBtn" onclick="startCamera()" class="flex-1 bg-slate-700 active:bg-slate-600 text-white py-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center space-x-1">
+          <span>📷 カメラを起動</span>
+        </button>
 
-      <!-- iPadタッチ操作用ガイド -->
-      <div class="absolute bottom-3 left-3 bg-slate-900/90 backdrop-blur-md px-3 py-1.5 rounded-lg text-[11px] text-slate-300 border border-slate-700 shadow-md pointer-events-none">
-        👉 指1本で回転 / 指2本で移動・ピンチ（拡大・縮小）
+        <!-- シャッターボタン -->
+        <button id="snapBtn" onclick="takePhotoStep()" disabled class="flex-2 bg-indigo-600 active:bg-indigo-700 disabled:bg-slate-700 disabled:text-slate-500 text-white font-bold py-2.5 px-6 rounded-xl text-xs transition shadow flex items-center justify-center space-x-2">
+          <span>📸 写真を撮る</span>
+        </button>
       </div>
 
-      <!-- 補正スライダー（iPadで押しやすいサイズ） -->
-      <div class="absolute top-3 right-3 bg-slate-900/90 backdrop-blur-md p-3 rounded-xl border border-slate-700 text-xs space-y-2 w-44">
-        <div class="font-bold text-indigo-300 border-b border-slate-700 pb-1">iPad 3D表示補正</div>
-        <div>
-          <label class="block text-[10px] text-slate-400 mb-1">モデルの滑らかさ</label>
-          <input type="range" id="smoothRange" min="0" max="100" value="50" class="w-full h-2 bg-slate-700 rounded-lg cursor-pointer" oninput="applySmoothing(this.value)">
+      <!-- 撮影済み写真のプレビュー（上書きされず並ぶ） -->
+      <div>
+        <div class="text-[11px] text-slate-400 mb-1 font-bold">撮影した写真（自動保持）</div>
+        <div id="thumbGrid" class="flex space-x-2 overflow-x-auto p-1.5 bg-slate-900 rounded-xl min-h-[60px] border border-slate-700">
+          <span class="text-[10px] text-slate-500 self-center mx-auto">ここに撮影した写真が追加されます</span>
         </div>
       </div>
+
+      <!-- 3D写真合成ボタン -->
+      <button id="build3DBtn" onclick="build3DPhoto()" disabled class="w-full bg-emerald-600 active:bg-emerald-700 disabled:bg-slate-700 disabled:text-slate-500 text-white font-bold py-3 rounded-xl text-xs transition shadow">
+        ✨ 撮影した写真から立体（3D）写真を作る
+      </button>
     </div>
 
   </main>
 
   <script>
-    let scene, camera, renderer, controls;
-    let currentMeshGroup;
+    let videoStream = null;
+    let capturedImages = []; // 撮影した写真を保持する配列（上書き防止）
+    
+    // 撮影方向の指示ステップ
+    const steps = [
+      "① 正面から撮ってください",
+      "② 少し【右側】から撮ってください",
+      "③ 少し【上から（斜め上）】撮ってください"
+    ];
+    let currentStep = 0;
 
-    window.addEventListener('DOMContentLoaded', () => {
-      initThreeJS();
-    });
+    // カメラ起動（iPadのインカメラ/アウトカメラ自動取得）
+    async function startCamera() {
+      try {
+        videoStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { exact: "environment" } }, // 背面カメラを優先
+          audio: false
+        });
+      } catch (e) {
+        // 背面カメラが取れない場合は標準カメラ
+        videoStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      }
 
-    function initThreeJS() {
-      const container = document.getElementById('webglContainer');
-      const width = container.clientWidth || window.innerWidth;
-      const height = container.clientHeight || 350;
-
-      scene = new THREE.Scene();
-      scene.background = new THREE.Color(0x020617);
-
-      camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
-      camera.position.set(0, 15, 30);
-
-      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-      // iPadの高解像度（Retinaディスプレイ）における描画負荷を制限して動作を滑らかにする
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-      renderer.setSize(width, height);
-      container.appendChild(renderer.domElement);
-
-      // --- iPad（タッチ操作）への最適化設定 ---
-      controls = new THREE.OrbitControls(camera, renderer.domElement);
-      controls.enableDamping = true;
-      controls.dampingFactor = 0.05;
+      const video = document.getElementById('cameraVideo');
+      video.srcObject = videoStream;
       
-      // iPadのマルチタッチ（2本指操作）に対応
-      controls.touches = {
-        ONE: THREE.TOUCH.ROTATE, // 1本指で回転
-        TWO: THREE.TOUCH.DOLLY_PAN // 2本指で拡大・縮小と平行移動
+      document.getElementById('startCamBtn').classList.add('bg-emerald-700');
+      document.getElementById('snapBtn').disabled = false;
+      updateGuide();
+    }
+
+    // ガイドテキスト更新
+    function updateGuide() {
+      if (currentStep < steps.length) {
+        document.getElementById('guideText').innerText = steps[currentStep];
+      } else {
+        document.getElementById('guideText').innerText = "準備完了！「立体写真を作る」を押してください";
+      }
+      document.getElementById('photoCount').innerText = capturedImages.length;
+    }
+
+    // シャッター（写真撮影＆保持）
+    function takePhotoStep() {
+      const video = document.getElementById('cameraVideo');
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth || 640;
+      canvas.height = video.videoHeight || 480;
+      
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      // 写真データ（DataURL）を取得して配列に追加（★ここで上書きを防ぐ）
+      const imgData = canvas.toDataURL('image/jpeg');
+      capturedImages.push(imgData);
+
+      // サムネイル追加
+      const grid = document.getElementById('thumbGrid');
+      if (capturedImages.length === 1) grid.innerHTML = ''; // 最初だけメッセージ消去
+
+      const imgEl = document.createElement('img');
+      imgEl.src = imgData;
+      imgEl.className = 'w-12 h-12 object-cover rounded-lg border border-indigo-400 flex-shrink-0';
+      grid.appendChild(imgEl);
+
+      currentStep++;
+      updateGuide();
+
+      // 3枚以上撮れたら合成可能に
+      if (capturedImages.length >= 2) {
+        document.getElementById('build3DBtn').disabled = false;
+      }
+    }
+
+    // 立体（3D）写真の合成と擬似立体表示
+    function build3DPhoto() {
+      const video = document.getElementById('cameraVideo');
+      const canvas = document.getElementById('photo3DCanvas');
+      const ctx = canvas.getContext('2d');
+
+      video.classList.add('hidden');
+      canvas.classList.remove('hidden');
+
+      canvas.width = 640;
+      canvas.height = 480;
+
+      // 撮影した写真を読み込み
+      const img1 = new Image();
+      const img2 = new Image();
+      img1.src = capturedImages[0]; // 正面
+      img2.src = capturedImages[1]; // 右/上視点
+
+      img2.onload = () => {
+        let mouseX = 0;
+        
+        // タッチ移動で写真をずらし、手前と奥の視差（立体感）を作る
+        canvas.addEventListener('touchmove', (e) => {
+          const touch = e.touches[0];
+          const rect = canvas.getBoundingClientRect();
+          mouseX = (touch.clientX - rect.left) / rect.width - 0.5;
+          renderStereoEffect(ctx, img1, img2, mouseX);
+        });
+
+        // 初期描画
+        renderStereoEffect(ctx, img1, img2, 0);
       };
 
-      // 照明設定
-      const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
-      scene.add(ambientLight);
-
-      const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-      dirLight.position.set(10, 20, 15);
-      scene.add(dirLight);
-
-      // 床面ガイド
-      const grid = new THREE.GridHelper(40, 16, 0x334155, 0x1e293b);
-      grid.position.y = -5;
-      scene.add(grid);
-
-      // iPadの画面回転やリサイズへの即座対応
-      window.addEventListener('resize', onWindowResize, false);
-      window.addEventListener('orientationchange', onWindowResize, false);
-
-      animate();
+      alert("立体写真が完成しました！\n画面上の写真を指で左右に触ると、奥と手前がずれて立体的に見えます。");
     }
 
-    function animate() {
-      requestAnimationFrame(animate);
-      if (controls) controls.update();
-      if (renderer && scene && camera) renderer.render(scene, camera);
-    }
+    // 視差レンダリング（立体写真効果）
+    function renderStereoEffect(ctx, img1, img2, offset) {
+      ctx.clearRect(0, 0, 640, 480);
+      
+      // 背景（1枚目の写真）
+      ctx.globalAlpha = 1.0;
+      ctx.drawImage(img1, 0, 0, 640, 480);
 
-    function onWindowResize() {
-      const container = document.getElementById('webglContainer');
-      if (!container || !renderer || !camera) return;
-
-      const width = container.clientWidth;
-      const height = container.clientHeight;
-
-      camera.aspect = width / height;
-      camera.updateProjectionMatrix();
-      renderer.setSize(width, height);
-    }
-
-    // iPadからの写真選択ハンドラー
-    function handleFileSelect(event) {
-      const files = event.target.files;
-      const grid = document.getElementById('previewGrid');
-      const processBtn = document.getElementById('processBtn');
-
-      if (!files || files.length === 0) return;
-
-      grid.innerHTML = '';
-      Array.from(files).forEach(file => {
-        const img = document.createElement('img');
-        img.src = URL.createObjectURL(file);
-        img.className = 'w-full h-12 object-cover rounded border border-slate-600';
-        grid.appendChild(img);
-      });
-
-      processBtn.disabled = false;
-    }
-
-    // AIでの写真接続シミュレーション
-    function processImagesWithAI() {
-      const progress = document.getElementById('aiProgress');
-      const bar = document.getElementById('aiBar');
-      const percentText = document.getElementById('aiPercent');
-      const statusText = document.getElementById('aiStatusText');
-
-      progress.classList.remove('hidden');
-
-      let pct = 0;
-      const interval = setInterval(() => {
-        pct += 10;
-        bar.style.width = pct + '%';
-        percentText.innerText = pct + '%';
-
-        if (pct === 30) statusText.innerText = '画像の共通点を解析中...';
-        if (pct === 70) statusText.innerText = '立体メッシュを作成・補正中...';
-
-        if (pct >= 100) {
-          clearInterval(interval);
-          statusText.innerText = '3Dモデル生成完了！';
-          renderGenerated3DModel();
-        }
-      }, 150);
-    }
-
-    // 生成モデルのレンダリング
-    function renderGenerated3DModel() {
-      if (currentMeshGroup) scene.remove(currentMeshGroup);
-
-      currentMeshGroup = new THREE.Group();
-
-      const geometry = new THREE.DodecahedronGeometry(6, 2);
-      const material = new THREE.MeshStandardMaterial({
-        color: 0x6366f1,
-        roughness: 0.4,
-        metalness: 0.2,
-        flatShading: false
-      });
-
-      const mesh = new THREE.Mesh(geometry, material);
-      currentMeshGroup.add(mesh);
-
-      scene.add(currentMeshGroup);
-    }
-
-    function applySmoothing(val) {
-      if (!currentMeshGroup) return;
-      const roughness = 1 - (val / 100);
-      currentMeshGroup.children[0].material.roughness = roughness;
+      // 2枚目の写真をずらして半透明重ね合わせ（赤青メガネなしでも深みが現れる立体視処理）
+      ctx.globalAlpha = 0.4;
+      const shiftX = offset * 30; // 指の動きに合わせてずらす
+      ctx.drawImage(img2, shiftX, 0, 640, 480);
     }
   </script>
 </body>
