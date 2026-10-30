@@ -19,7 +19,6 @@
   </header>
 
   <main class="flex-1 max-w-6xl w-full mx-auto grid grid-cols-1 md:grid-cols-3 gap-3">
-    <!-- 左側：コントロール -->
     <div class="bg-slate-800 p-3 rounded-2xl border border-slate-700 flex flex-col space-y-3">
       <div class="bg-slate-900 p-3 rounded-xl border border-slate-700">
         <div id="guideInstruction" class="text-sm font-extrabold text-amber-300">
@@ -34,7 +33,6 @@
         </label>
       </div>
 
-      <!-- 写真リスト -->
       <div class="flex-1 flex flex-col">
         <div id="photoListGrid" class="grid grid-cols-2 gap-2 p-2 bg-slate-950 rounded-xl border border-slate-800 min-h-[140px] max-h-[220px] overflow-y-auto">
           <span class="col-span-2 text-[11px] text-slate-500 text-center self-center">撮影するとAIが背景を自動消去します</span>
@@ -46,7 +44,6 @@
       </button>
     </div>
 
-    <!-- 右側：3D表示ビューア -->
     <div class="md:col-span-2 bg-slate-950 rounded-2xl border border-slate-800 relative overflow-hidden flex flex-col min-h-[380px]">
       <div id="webglContainer" class="w-full h-full flex-1"></div>
     </div>
@@ -72,7 +69,6 @@
       initMediaPipeAI();
     });
 
-    // AI初期化処理
     async function initMediaPipeAI() {
       try {
         const { ImageSegmenter, FilesetResolver } = vision;
@@ -80,19 +76,18 @@
           "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm"
         );
 
+        // iPadフリーズ対策: delegateを "GPU" から "CPU" に変更
         imageSegmenter = await ImageSegmenter.createFromOptions(filesetResolver, {
           baseOptions: {
-            // ブロックされにくいGitHubのプロキシURLを利用
-            modelAssetPath: "https://raw.githubusercontent.com/google/mediapipe/master/mediapipe/tasks/testdata/vision/deeplabv3.tflite",
-            delegate: "GPU"
+            modelAssetPath: "https://storage.googleapis.com/mediapipe-models/image_segmenter/deeplab_v3/float32/1/deeplab_v3.tflite",
+            delegate: "CPU" 
           },
           outputCategoryMask: true,
           outputConfidenceMasks: false
         });
 
-        // AI準備完了UI更新
         const badge = document.getElementById('aiStatusBadge');
-        badge.innerText = "AIエンジン稼働中";
+        badge.innerText = "AIエンジン稼働中 (CPU互換モード)";
         badge.className = "text-xs bg-emerald-900 text-emerald-200 px-2.5 py-0.5 rounded-full font-bold";
 
         const btnLabel = document.getElementById('captureBtnLabel');
@@ -103,12 +98,10 @@
       } catch (e) {
         console.error("AIロードエラー:", e);
         document.getElementById('aiStatusBadge').innerText = "AI通信エラー";
-        document.getElementById('btnText').innerText = "通信環境を確認してください";
-        alert("AIモデルのダウンロードに失敗しました。学校のネットワークでブロックされている可能性があります。");
+        document.getElementById('btnText').innerText = "エラー: " + e.message;
       }
     }
 
-    // Three.js初期化
     function initThreeJS() {
       const container = document.getElementById('webglContainer');
       scene = new THREE.Scene();
@@ -137,7 +130,6 @@
       renderer.render(scene, camera);
     }
 
-    // 写真撮影＆AI処理
     function handlePhotoCapture(event) {
       const file = event.target.files[0];
       if (!file) return;
@@ -154,7 +146,6 @@
       event.target.value = '';
     }
 
-    // AIによる全自動切り抜き
     function runAISegmentation(imgElement) {
       imageSegmenter.segment(imgElement, (result) => {
         const mask = result.categoryMask;
@@ -168,7 +159,6 @@
         const pixels = imgData.data;
         const maskData = mask.getAsUint8Array();
 
-        // 0は背景、それ以外(1～)が物体。背景を透明化
         for (let i = 0; i < maskData.length; i++) {
           if (maskData[i] === 0) pixels[i * 4 + 3] = 0;
         }
@@ -181,7 +171,7 @@
           processedSrc: canvas.toDataURL('image/png')
         });
 
-        document.getElementById('aiStatusBadge').innerText = "AIエンジン稼働中";
+        document.getElementById('aiStatusBadge').innerText = "AIエンジン稼働中 (CPU互換モード)";
         updatePhotoListUI();
       });
     }
